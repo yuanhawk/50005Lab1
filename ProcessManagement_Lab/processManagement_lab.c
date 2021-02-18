@@ -1,3 +1,4 @@
+#include <strings.h>
 #include "processManagement_lab.h"
 
 /**
@@ -47,25 +48,45 @@ void job_dispatch(int i){
 void setup(){
 
     // TODO#1:  a. Create shared memory for global_data struct (see processManagement_lab.h)
+    ShmID_global_data = shmget(IPC_PRIVATE, sizeof(global_data), IPC_CREAT | 0666);
+    isSharedMemFail(ShmID_global_data);
+
     //          b. When shared memory is successfully created, set the initial values of "max" and "min" of the global_data struct in the shared memory accordingly
     // To bring you up to speed, (a) and (b) are given to you already. Please study how it works. 
-
-    //          c. Create semaphore of value 1 which purpose is to protect this global_data struct in shared memory 
-    //          d. Create shared memory for number_of_processes job struct (see processManagement_lab.h)
-    //          e. When shared memory is successfully created, setup the content of the structs (see handout)
-    //          f. Create number_of_processes semaphores of value 0 each to protect each job struct in the shared memory. Store the returned pointer by sem_open in sem_jobs_buffer[i]
-    //          g. Return to main
-
-    ShmID_global_data = shmget(IPC_PRIVATE, sizeof(global_data), IPC_CREAT | 0666);
-    if (ShmID_global_data == -1){
-        printf("Global data shared memory creation failed\n");
-        exit(EXIT_FAILURE);
-    }
     ShmPTR_global_data = (global_data *) shmat(ShmID_global_data, NULL, 0);
-    if ((int) ShmPTR_global_data == -1){
-        printf("Attachment of global data shared memory failed \n");
-        exit(EXIT_FAILURE);
+    isMemAttachFail((int) ShmPTR_global_data);
+
+    //          c. Create semaphore of value 1 which purpose is to protect this global_data struct in shared memory
+    while ((sem_global_data = sem_open("semglobaldata", O_CREAT,
+            S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+            1)) == SEM_FAILED)
+    {
+        printSemFail();
+        sem_unlink("semglobaldata");
     }
+
+    //          d. Create shared memory for number_of_processes job struct (see processManagement_lab.h)
+    ShmID_jobs = shmget(IPC_PRIVATE, sizeof(job), IPC_CREAT | 0666);
+    isSharedMemFail(ShmID_jobs);
+
+    //          e. When shared memory is successfully created, setup the content of the structs (see handout)
+    shmPTR_jobs_buffer = (job *) shmat(ShmID_jobs, NULL, 0);
+    isMemAttachFail((int) shmPTR_jobs_buffer);
+
+    //          f. Create number_of_processes semaphores of value 0 each to protect each job struct in the shared memory. Store the returned pointer by sem_open in sem_jobs_buffer[i]
+    char semjobsi[] = "semjobsi";
+    for (int i = 0; i < number_of_processes; i++) {
+        semjobsi[7] = i + '0';
+        while ((sem_jobs_buffer[i] = sem_open(semjobsi, O_CREAT,
+                                              S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+                                              0)) == SEM_FAILED)
+        {
+            printSemFail();
+            sem_unlink(semjobsi);
+        }
+    }
+
+    //          g. Return to main
 
     //set global data min and max
     ShmPTR_global_data->max = -1;
@@ -75,16 +96,55 @@ void setup(){
 
 }
 
+void printSemFail()
+{
+    printf("Failed to initialize semaphore\n");
+}
+
+void isSharedMemFail(int id)
+{
+    if (id == -1)
+    {
+        printf("Failed to create shared memory\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void isMemAttachFail(int id)
+{
+    if (id == -1)
+    {
+        perror("Fail to attach the memory to this address space\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
 /**
  * Function to spawn all required children processes
  **/
  
 void createchildren(){
     // TODO#2:  a. Create number_of_processes children processes
-    //          b. Store the pid_t of children i at children_processes[i]
-    //          c. For child process, invoke the method job_dispatch(i)
     //          d. For the parent process, continue creating the next children
-    //          e. After number_of_processes children are created, return to main 
+    //          e. After number_of_processes children are created, return to main
+    pid_t pid;
+
+    for (int i = 0; i < number_of_processes; ++i) {
+        switch (pid = fork()) {
+            case -1:
+                fprintf(stderr, "Fork has failed. Exiting now");
+                exit(1); // exit error
+            case 0:
+                //          b. Store the pid_t of children i at children_processes[i]
+                children_processes[i] = pid;
+                //          c. For child process, invoke the method job_dispatch(i)
+                job_dispatch(i);
+                printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
+                exit(0);
+            default:
+                children_processes[0] = pid;
+        }
+    }
 
     return;
 }
@@ -140,23 +200,14 @@ void cleanup(){
 // Real main
 int main(int argc, char* argv[]){
 
-    printf("Lab 1 Starts...\n");
-
-    struct timeval start, end;
-    long secs_used,micros_used;
-
-    //start timer
-    gettimeofday(&start, NULL);
-
     //Check and parse command line options to be in the right format
     if (argc < 2) {
         printf("Usage: sum <infile> <numprocs>\n");
         exit(EXIT_FAILURE);
     }
 
-
-    //Limit number_of_processes into 10. 
-    //If there's no third argument, set the default number_of_processes into 1.  
+    //Limit number_of_processes into 10.
+    //If there's no third argument, set the default number_of_processes into 1.
     if (argc < 3){
         number_of_processes = 1;
     }
@@ -165,21 +216,17 @@ int main(int argc, char* argv[]){
         else number_of_processes = MAX_PROCESS;
     }
 
-    setup();
+    printf("Number of processes: %d\n", number_of_processes);
+    printf("Main process pid %d \n", getpid());
+
     createchildren();
-    main_loop(argv[1]);
 
-    //parent cleanup
-    cleanup();
-
-    //stop timer
-    gettimeofday(&end, NULL);
-
-    double start_usec = (double) start.tv_sec * 1000000 + (double) start.tv_usec;
-    double end_usec =  (double) end.tv_sec * 1000000 + (double) end.tv_usec;
-
-    printf("Your computation has used: %lf secs \n", (end_usec - start_usec)/(double)1000000);
+    for (int i = 0; i<number_of_processes; i++){
+        printf("Child process %d created with pid: %d \n", i, children_processes[i]);
+        wait(NULL);
+    }
 
 
-    return (EXIT_SUCCESS);
+    printf("success\n");
+    return 0;
 }

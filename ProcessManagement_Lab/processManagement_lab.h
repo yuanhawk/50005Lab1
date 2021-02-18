@@ -62,3 +62,7 @@ void setup();
 void createchildren();
 void main_loop(char* filename);
 void cleanup();
+
+void isSharedMemFail(int id);
+void isMemAttachFail(int id);
+void printSemFail();
