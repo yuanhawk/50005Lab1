@@ -63,6 +63,16 @@ void createchildren();
 void main_loop(char* filename);
 void cleanup();
 
+
+// Add-on functions
 void isSharedMemFail(int id);
 void isMemAttachFail(int id);
 void printSemFail();
+void *producer_function(long duration);
+void *consumer_function(long duration);
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+void *oddDuration();
+void *minDuration();
+void *maxDuration();
+void createThread(int threadNum, pthread_t *pPthread);
