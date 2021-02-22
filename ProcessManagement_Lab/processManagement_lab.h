@@ -65,14 +65,12 @@ void cleanup();
 
 
 // Add-on functions
+pid_t pid;
+
 void isSharedMemFail(int id);
 void isMemAttachFail(int id);
 void printSemFail();
-void *producer_function(long duration);
-void *consumer_function(long duration);
 
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-void *oddDuration();
-void *minDuration();
-void *maxDuration();
-void createThread(int threadNum, pthread_t *pPthread);
+void update(int count, char action, long num);
+void check_detach(int state);
+void check_rm(int state);
