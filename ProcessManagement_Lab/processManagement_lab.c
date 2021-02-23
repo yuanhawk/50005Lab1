@@ -42,7 +42,6 @@ void job_dispatch(int i){
         sem_wait(sem_jobs_buffer[i]);
         if (shmPTR_jobs_buffer[i].task_status != -1) // not termination
         {
-            shmPTR_jobs_buffer[i].task_status = 0;
             switch (shmPTR_jobs_buffer[i].task_type) {
                 case 't':
                     task(shmPTR_jobs_buffer[i].task_duration);
@@ -51,12 +50,12 @@ void job_dispatch(int i){
                     usleep(shmPTR_jobs_buffer[i].task_duration * TIME_MULTIPLIER);
                     break;
                 case 'z':
-                    shmPTR_jobs_buffer[i].task_status = 0;
                     exit(3);
                 case 'i':
                     kill(getpid(), SIGKILL);
                     break;
             }
+            shmPTR_jobs_buffer[i].task_status = 0;
         }
     }
 
@@ -151,7 +150,7 @@ void createchildren(){
     //          d. For the parent process, continue creating the next children
     //          e. After number_of_processes children are created, return to main
 
-    for (int i = 0; i < number_of_processes; ++i) {
+    for (int i = 0; i < number_of_processes; i++) {
         switch (pid = fork()) {
             case -1:
                 fprintf(stderr, "Fork has failed. Exiting now");
@@ -180,10 +179,9 @@ void main_loop(char* fileName){
     char action; //stores whether its a 'p' or 'w'
     long num; //stores the argument of the job
     int status;
-    bool assigned = false;
 
     while (fscanf(opened_file, "%c %ld\n", &action, &num) == 2) { //while the file still has input
-        assigned = false;
+        bool assigned = false;
 
         while (!assigned)
         {
@@ -195,6 +193,7 @@ void main_loop(char* fileName){
 
             for (int i = 0; i < number_of_processes; i++)
             {
+                status = 0;
                 int alive = waitpid(children_processes[i], &status, WNOHANG);
                 if (shmPTR_jobs_buffer[i].task_status == 0 && alive == 0)
                 {
@@ -206,19 +205,36 @@ void main_loop(char* fileName){
                     //      c. Break of busy wait loop, advance to the next task on file
                     break;
                 }
-                if (alive != 0) {
+
+                if (status == 9) {
                     //      d. Otherwise if process i is prematurely terminated, revive it. You are free to design any mechanism
                     //      you want. The easiest way is to always spawn a new process using fork(), direct the children to job_
                     //      dispatch(i) function. Then, update the shmPTR_jobs_buffer[i] for this process. Afterwards, don't forget
                     //      to do sem_post as well
-                    printf("child exits prematurely");
-                    createchildren();
+//                    printf("child exits prematurely\n");
+                    assigned = true;
+                    switch (pid = fork()) {
+                        case -1:
+                            fprintf(stderr, "Fork has failed. Exiting now");
+                            exit(EXIT_FAILURE); // exit error
+                        case 0:
+                            //          c. For child process, invoke the method job_dispatch(i)
+                            job_dispatch(i);
+                            printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
+                            exit(EXIT_SUCCESS);
+                        default:
+                            //          b. Store the pid_t of children i at children_processes[i]
+                            update(i, action, num);
+                            children_processes[i] = pid;
+                            break;
+                    }
+                    break;
                 }
 
                 if (WIFEXITED(status)) {
                     int es = WEXITSTATUS(status);
 
-                    printf("Exit status was %d\n", es);
+//                    printf("Exit status was %d\n", es);
                 }
             }
             //      e. The outermost while loop will keep doing this until there's no more content in the input file.
@@ -229,13 +245,18 @@ void main_loop(char* fileName){
 //    printf("Main process is going to send termination signals\n");
 
     // TODO#4: Design a way to send termination jobs to ALL worker that are currently alive 
-    for (int i = 0; i < number_of_processes; i++) {
-        if (waitpid(children_processes[i], &status, WNOHANG) == 0)
-        {
-            update(i, 'z', 0);
+    for (;;)
+    {
+        int count = 0;
+        for (int i = 0; i < number_of_processes; i++) {
+            if (waitpid(children_processes[i], &status, WNOHANG) == 0)
+            {
+                update(i, 'z', 0);
+            }
+            count++;
         }
+        if (count == number_of_processes) break;
     }
-
 
     //wait for all children processes to properly execute the 'z' termination jobs
     int process_waited_final = 0;
