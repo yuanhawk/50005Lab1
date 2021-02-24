@@ -59,7 +59,7 @@ void job_dispatch(int i){
         }
     }
 
-//    printf("Hello from child %d with pid %d and parent id %d\n", i, getpid(), getppid());
+////    printf("Hello from child %d with pid %d and parent id %d\n", i, getpid(), getppid());
 //    exit(EXIT_SUCCESS);
 
 }
@@ -71,12 +71,12 @@ void setup(){
 
     // TODO#1:  a. Create shared memory for global_data struct (see processManagement_lab.h)
     ShmID_global_data = shmget(IPC_PRIVATE, sizeof(global_data), IPC_CREAT | 0666);
-    isSharedMemFail(ShmID_global_data);
+    isSharedMemFail(&ShmID_global_data);
 
     //          b. When shared memory is successfully created, set the initial values of "max" and "min" of the global_data struct in the shared memory accordingly
     // To bring you up to speed, (a) and (b) are given to you already. Please study how it works. 
     ShmPTR_global_data = (global_data *) shmat(ShmID_global_data, NULL, 0);
-    isMemAttachFail((int) ShmPTR_global_data);
+    isMemAttachFail((const int *) &ShmPTR_global_data);
 
     //          c. Create semaphore of value 1 which purpose is to protect this global_data struct in shared memory
     while ((sem_global_data = sem_open("semglobaldata", O_CREAT,
@@ -89,11 +89,11 @@ void setup(){
 
     //          d. Create shared memory for number_of_processes job struct (see processManagement_lab.h)
     ShmID_jobs = shmget(IPC_PRIVATE, sizeof(job), IPC_CREAT | 0666);
-    isSharedMemFail(ShmID_jobs);
+    isSharedMemFail(&ShmID_jobs);
 
     //          e. When shared memory is successfully created, setup the content of the structs (see handout)
     shmPTR_jobs_buffer = (job *) shmat(ShmID_jobs, NULL, 0);
-    isMemAttachFail((int) shmPTR_jobs_buffer);
+    isMemAttachFail((const int *) &shmPTR_jobs_buffer);
 
     //          f. Create number_of_processes semaphores of value 0 each to protect each job struct in the shared memory. Store the returned pointer by sem_open in sem_jobs_buffer[i]
     char semjobsi[] = "semjobsi";
@@ -113,9 +113,6 @@ void setup(){
     //set global data min and max
     ShmPTR_global_data->max = -1;
     ShmPTR_global_data->min = INT_MAX;
-    
-    return;
-
 }
 
 void printSemFail()
@@ -123,18 +120,18 @@ void printSemFail()
     printf("Failed to initialize semaphore\n");
 }
 
-void isSharedMemFail(int id)
+void isSharedMemFail(const int *id)
 {
-    if (id == -1)
+    if (*id == -1)
     {
         printf("Failed to create shared memory\n");
         exit(EXIT_FAILURE);
     }
 }
 
-void isMemAttachFail(int id)
+void isMemAttachFail(const int *id)
 {
-    if (id == -1)
+    if (*id == -1)
     {
         perror("Fail to attach the memory to this address space\n");
         exit(EXIT_FAILURE);
@@ -158,15 +155,13 @@ void createchildren(){
             case 0:
                 //          c. For child process, invoke the method job_dispatch(i)
                 job_dispatch(i);
-                printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
+//                printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
                 exit(EXIT_SUCCESS);
             default:
                 //          b. Store the pid_t of children i at children_processes[i]
                 children_processes[i] = pid;
         }
     }
-
-    return;
 }
 
 /**
@@ -200,8 +195,8 @@ void main_loop(char* fileName){
                     //      b. If both conditions in (a) is satisfied update the contents of shmPTR_jobs_buffer[i], and
                     //      increase the semaphore using sem_post(sem_jobs_buffer[i])
                     assigned = true;
-                    update(i, action, num);
-                    printf("Child process %d with pid %d doing job: %c%ld\n", i, pid, action, num);
+                    update(&i, &action, &num);
+//                    printf("Child process %d with pid %d doing job: %c%ld\n", i, pid, action, num);
                     //      c. Break of busy wait loop, advance to the next task on file
                     break;
                 }
@@ -220,11 +215,11 @@ void main_loop(char* fileName){
                         case 0:
                             //          c. For child process, invoke the method job_dispatch(i)
                             job_dispatch(i);
-                            printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
+//                            printf("Hello from child %d with pid %d and parent id %d", i, pid, children_processes[0]);
                             exit(EXIT_SUCCESS);
                         default:
                             //          b. Store the pid_t of children i at children_processes[i]
-                            update(i, action, num);
+                            update(&i, &action, &num);
                             children_processes[i] = pid;
                             break;
                     }
@@ -251,7 +246,7 @@ void main_loop(char* fileName){
         for (int i = 0; i < number_of_processes; i++) {
             if (waitpid(children_processes[i], &status, WNOHANG) == 0)
             {
-                update(i, 'z', 0);
+                update(&i, &z, &zero);
             }
             count++;
         }
@@ -269,12 +264,12 @@ void main_loop(char* fileName){
     printf("Final results: sum -- %ld, odd -- %ld, min -- %ld, max -- %ld, total task -- %ld\n", ShmPTR_global_data->sum_work, ShmPTR_global_data->odd, ShmPTR_global_data->min, ShmPTR_global_data->max, ShmPTR_global_data->total_tasks);
 }
 
-void update(int count, char action, long num)
+void update(const int *count, const char *action, const long *num)
 {
-    shmPTR_jobs_buffer[count].task_type = action;
-    shmPTR_jobs_buffer[count].task_duration = num;
-    shmPTR_jobs_buffer[count].task_status = 1;
-    sem_post(sem_jobs_buffer[count]);
+    shmPTR_jobs_buffer[*count].task_type = *action;
+    shmPTR_jobs_buffer[*count].task_duration = (int) *num;
+    shmPTR_jobs_buffer[*count].task_status = 1;
+    sem_post(sem_jobs_buffer[*count]);
 }
 
 void cleanup(){
@@ -282,11 +277,15 @@ void cleanup(){
     // 1. Detach both shared memory (global_data and jobs)
     // 2. Delete both shared memory (global_data and jobs)
     // 3. Unlink all semaphores in sem_jobs_buffer
-    check_detach(shmdt(ShmPTR_global_data));
-    check_detach(shmdt(shmPTR_jobs_buffer));
+    int id = shmdt(ShmPTR_global_data);
+    check_detach(&id);
+    id = shmdt(shmPTR_jobs_buffer);
+    check_detach(&id);
 
-    check_rm(shmctl(ShmID_global_data, IPC_RMID, NULL));
-    check_rm(shmctl(ShmID_jobs, IPC_RMID, NULL));
+    id = shmctl(ShmID_global_data, IPC_RMID, NULL);
+    check_rm(&id);
+    id = shmctl(ShmID_jobs, IPC_RMID, NULL);
+    check_rm(&id);
 
     sem_unlink("semglobaldata");
     char semjobsi[] = "semjobsi";
@@ -296,26 +295,26 @@ void cleanup(){
     }
 }
 
-void check_detach(int state)
+void check_detach(const int *state)
 {
-    if (state == -1)
+    if (*state == -1)
     {
-        printf("Error detaching shared memory.\n");
+//        printf("Error detaching shared memory.\n");
     }
 }
 
-void check_rm(int state)
+void check_rm(const int *state)
 {
-    if (state == -1)
+    if (*state == -1)
     {
-        printf("Error removing shared memory.\n");
+//        printf("Error removing shared memory.\n");
     }
 }
 
 // Real main
 int main(int argc, char* argv[]){
 
-    printf("Lab 1 Starts...\n");
+//    printf("Lab 1 Starts...\n");
 
     struct timeval start, end;
     long secs_used,micros_used;
@@ -325,7 +324,7 @@ int main(int argc, char* argv[]){
 
     //Check and parse command line options to be in the right format
     if (argc < 2) {
-        printf("Usage: sum <infile> <numprocs>\n");
+//        printf("Usage: sum <infile> <numprocs>\n");
         exit(EXIT_FAILURE);
     }
 

@@ -66,11 +66,13 @@ void cleanup();
 
 // Add-on functions
 pid_t pid;
+char z = 'z';
+long zero = 0;
 
-void isSharedMemFail(int id);
-void isMemAttachFail(int id);
+void isSharedMemFail(const int *id);
+void isMemAttachFail(const int *id);
 void printSemFail();
 
-void update(int count, char action, long num);
-void check_detach(int state);
-void check_rm(int state);
+void update(const int *count, const char *action, const long *num);
+void check_detach(const int *state);
+void check_rm(const int *state);
